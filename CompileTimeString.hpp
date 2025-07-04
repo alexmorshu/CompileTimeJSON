@@ -37,13 +37,13 @@ struct Write<T>
 template <class T, class U = void>
 struct ValueExists
 {
-	static const bool value = false;
+	using type = std::false_type;
 };
 
 template<class T>
 struct ValueExists<T, void_t<decltype(std::declval<T>().value)>>
 {
-	static const bool value = true;
+	using type = std::true_type;
 };
 
 
@@ -165,13 +165,13 @@ struct JSONBranch
 	};
 
 	template<std::size_t n,  std::size_t index, class f, class... JSONelems>
-	struct GetSeq<n, n, index, false,f, JSONelems...>
+	struct GetSeq<n, n, index, false, f, JSONelems...>
 	{
 		using value = ContainerForGetSeg<n, index, f>;
 	};
 
 	template<std::size_t n, std::size_t current, std::size_t index, class f, class... JSONelems>
-	struct GetSeq<n, current, index,false,f, JSONelems...>
+	struct GetSeq<n, current, index, false ,f, JSONelems...>
 	{;
 		using value = typename std::conditional<
 				/*if*/ ((current + f::size) > n) ,
@@ -182,7 +182,7 @@ struct JSONBranch
 
 
 	//get NumsContainer for num
-	template<std::size_t n, std::size_t current, bool isElem, std::size_t... indexs>
+	template<std::size_t n, std::size_t current, class isElem, std::size_t... indexs>
 	struct CalculateNumContainer
 	{
 		using value = typename GetSeq<n, current, 0, false ,JSONelem...>::value;
@@ -190,10 +190,10 @@ struct JSONBranch
 	};
 
 	template<std::size_t n, std::size_t current, std::size_t... indexs>
-	struct CalculateNumContainer<n, current, ValueExists<typename GetSeq<n, current, 0, false ,JSONelem...>::value::type>::value, indexs...>
+	struct CalculateNumContainer<n, current, typename ValueExists<typename GetSeq<n, current, 0, false ,JSONelem...>::value::type>::type, indexs...>
 	{
 		using value = typename GetSeq<n, current, 0, false ,JSONelem...>::value;
-		using contain_type = typename value::type::CalculateNumContainer<n, value::size, false ,indexs..., value::i>::contain_type;
+		using contain_type = typename value::type::template CalculateNumContainer<n, value::size, std::false_type ,indexs..., value::i>::contain_type;
 	};
 
 
@@ -228,7 +228,7 @@ struct JSONBranch
 	template<std::size_t n>
 	struct GetForValueStruct
 	{
-		using type = typename CalculateNumContainer<n,0, false>::contain_type::CopyInTemplate<ForValue>::type;
+		using type = typename CalculateNumContainer<n,0, std::false_type>::contain_type::template CopyInTemplate<ForValue>::type;
 	};
 	
 
@@ -248,7 +248,7 @@ struct JSONBranch
 	template<std::size_t n>
 	void* getValue()
 	{
-		return GetForValueStruct<n>::type::getValue(*this); 
+		return std::addressof(GetForValueStruct<n>::type::getValue(*this)); 
 	}
 
 	constexpr static void* (JSONBranch::*(arr[JSONBranch::size]))(){&JSONBranch::getValue<0>};
@@ -274,14 +274,14 @@ struct JSONBranch
 
 
 	//get type value, if it's a elem or branch
-	template<class Find, bool a = false>
+	template<class Find, class a = std::false_type>
 	struct ret
 	{
 		using type = decltype(std::declval<typename typeJson<Find>::type>().value);
 	};
 
 	template<class Find>
-	struct ret<Find, ValueExists<typename typeJson<Find>::type>::value>
+	struct ret<Find, typename ValueExists< typename typeJson<Find>::type >::type >
 	{
 		using type = typename typeJson<Find>::type;
 	};
