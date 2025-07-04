@@ -6,6 +6,9 @@
 #include <vector>
 #include <algorithm>
 
+
+//TODO: Add error support
+
 template< class... >
 using void_t = void;
 
@@ -44,7 +47,7 @@ struct ValueExists<T, void_t<decltype(std::declval<T>().value)>>
 };
 
 
-
+//compile-time string 
 template <class T, T... chars>
 struct Str
 {
@@ -132,7 +135,18 @@ struct JSONBranch
 	//contain indexs for tuple to get elem in seq
 	template<std::size_t... nums>
 	struct NumsContainer
-	{};
+	{
+		template<template <std::size_t...> class U>
+		struct CopyInTemplate
+		{
+			using type = U<nums...>;
+		};
+	};
+
+	
+	
+
+	
 
 	//detail for GetSeq
 	template<std::size_t currentSize, std::size_t index, class JSONType>
@@ -169,22 +183,75 @@ struct JSONBranch
 
 	//get NumsContainer for num
 	template<std::size_t n, std::size_t current, bool isElem, std::size_t... indexs>
-	struct Test
+	struct CalculateNumContainer
 	{
 		using value = typename GetSeq<n, current, 0, false ,JSONelem...>::value;
 		using contain_type = NumsContainer<indexs..., value::i>;
 	};
 
 	template<std::size_t n, std::size_t current, std::size_t... indexs>
-	struct Test<n, current, ValueExists<typename GetSeq<n, current, 0, false ,JSONelem...>::value::type>::value, indexs...>
+	struct CalculateNumContainer<n, current, ValueExists<typename GetSeq<n, current, 0, false ,JSONelem...>::value::type>::value, indexs...>
 	{
 		using value = typename GetSeq<n, current, 0, false ,JSONelem...>::value;
-		using contain_type = typename value::type::Test<n, value::size, false ,indexs..., value::i>::contain_type;
+		using contain_type = typename value::type::CalculateNumContainer<n, value::size, false ,indexs..., value::i>::contain_type;
 	};
 
 
+	//Get ref by indexes
+	template<std::size_t... indexes>
+	struct ForValue
+	{
+	};
+
+	template<std::size_t f>
+	struct ForValue<f>
+	{
+		using Ret = decltype(std::get<f>(std::declval<JSONBranch&>().values).value);	
+		//TODO: what should ret be returned (&/&&) and think about CONST
+		static constexpr Ret& getValue(JSONBranch& b)
+		{
+			return std::get<f>(b.values).value;
+		}
+	};
+	template<std::size_t f, std::size_t s, std::size_t... indexes>
+	struct ForValue<f, s, indexes...>
+	{
+		using nextBranch = typename std::remove_reference<decltype(std::get<f>(std::declval<JSONBranch>().values))>::type;
+		using Ret = decltype(nextBranch::template ForValue<s, indexes...>::getValue(std::get<f>(std::declval<JSONBranch&>().values)));	
+		static constexpr Ret getValue(JSONBranch& b)
+		{
+			return nextBranch::template ForValue<s, indexes...>::getValue(std::get<f>(b.values));
+		}
+	};
+	 
+	//Get ForValue struct by only one arg
+	template<std::size_t n>
+	struct GetForValueStruct
+	{
+		using type = typename CalculateNumContainer<n,0, false>::contain_type::CopyInTemplate<ForValue>::type;
+	};
+	
 
 
+
+	//TODO: add const support of getValue funtion
+	//right function
+	/*
+	template<std::size_t n>
+	decltype(GetForValueStruct<n>::type::getValue(std::declval<JSONBranch&>())) getValue()
+	{
+		return GetForValueStruct<n>::type::getValue(*this); 
+	}
+	*/
+
+	//test function	
+	template<std::size_t n>
+	void* getValue()
+	{
+		return GetForValueStruct<n>::type::getValue(*this); 
+	}
+
+	constexpr static void* (JSONBranch::*(arr[JSONBranch::size]))(){&JSONBranch::getValue<0>};
 
 	//Get num of type with key=Find
 	template <std::size_t n, class Find, class... JSONelems>
@@ -194,6 +261,7 @@ struct JSONBranch
 	struct Get<n, Find, f, JSONelems...>
 	{
 		static const std::size_t i = std::conditional<std::is_same<Find,typename f::StrKey>::value, std::integral_constant<std::size_t, n>, Get<n+1, Find, JSONelems...>>::type::value;
+		static const std::size_t value = i;
 	};
 
 
@@ -206,16 +274,17 @@ struct JSONBranch
 
 
 	//get type value, if it's a elem or branch
-	template<class Find>
+	template<class Find, bool a = false>
 	struct ret
 	{
-		using type = typename std::conditional<
-			ValueExists<typename typeJson<Find>::type>::value,
-			decltype(std::declval<typename typeJson<Find>::type>().value),
-			typename typeJson<Find>::type
-		>::type;
+		using type = decltype(std::declval<typename typeJson<Find>::type>().value);
 	};
 
+	template<class Find>
+	struct ret<Find, ValueExists<typename typeJson<Find>::type>::value>
+	{
+		using type = typename typeJson<Find>::type;
+	};
 
 	//get ref of value if it`s a elem with key str, or ref to branch
 	template<class T>
@@ -233,7 +302,7 @@ struct JSONBranch
 };
 
 
-
+//GNU specific
 template<class T, T... chars>
 Str<T, chars...> operator""_GCT()
 {
@@ -244,25 +313,14 @@ Str<T, chars...> operator""_GCT()
 
 
 using name = JSONArray<decltype("name"_GCT), double, 2>;
-using tree = JSONBranch<decltype("tree"_GCT), JSONLeaf<decltype("example1"), int>, JSONLeaf<decltype("example2"), int> >;
+using tree = JSONBranch<decltype("tree"_GCT), JSONLeaf<decltype("example1"_GCT), int>, JSONLeaf<decltype("example2"_GCT), int> >;
 using password = JSONArray<decltype("password"_GCT), double, 2>;
-
 
 
 int main()
 {
 	JSONBranch<decltype("root"_GCT), name, tree, password > a;	
-	const decltype(a)& b = a;
-	const double (&arr)[2] = b["name"_GCT];
-	a["name"_GCT][1] = 32.2;
-	//std::cout << decltype(a)::size << std::endl;
-	
-	//using Key = typename decltype(a)::Test<0,0>::value::type::StrKey;
-	//char buffer[Key::size];
-	//Key::get(buffer);
 
-	//std::cout << buffer << std::endl;
-
-	typename decltype(a)::Test<3, 0, false>::contain_type c;
-	c.get;
+	volatile int f = 0;	
+	std::cout << ((a.*decltype(a)::arr[f])());
 }
