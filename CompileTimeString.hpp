@@ -207,8 +207,11 @@ struct JSONBranch
 	struct ForValue<f>
 	{
 		using Ret = decltype(std::get<f>(std::declval<JSONBranch&>().values).value);	
-		//TODO: what should ret be returned (&/&&) and think about CONST
 		static constexpr Ret& getValue(JSONBranch& b)
+		{
+			return std::get<f>(b.values).value;
+		}
+		static constexpr const Ret& getValue(const JSONBranch& b)
 		{
 			return std::get<f>(b.values).value;
 		}
@@ -218,7 +221,12 @@ struct JSONBranch
 	{
 		using nextBranch = typename std::remove_reference<decltype(std::get<f>(std::declval<JSONBranch>().values))>::type;
 		using Ret = decltype(nextBranch::template ForValue<s, indexes...>::getValue(std::get<f>(std::declval<JSONBranch&>().values)));	
+		using ConstRet = decltype(nextBranch::template ForValue<s, indexes...>::getValue(std::get<f>(std::declval<const JSONBranch&>().values)));	
 		static constexpr Ret getValue(JSONBranch& b)
+		{
+			return nextBranch::template ForValue<s, indexes...>::getValue(std::get<f>(b.values));
+		}
+		static constexpr ConstRet getValue(const JSONBranch& b)
 		{
 			return nextBranch::template ForValue<s, indexes...>::getValue(std::get<f>(b.values));
 		}
@@ -234,16 +242,17 @@ struct JSONBranch
 
 
 
-	//TODO: add const support of getValue funtion
-	//right function
-	/*
 	template<std::size_t n>
 	decltype(GetForValueStruct<n>::type::getValue(std::declval<JSONBranch&>())) getValue()
 	{
 		return GetForValueStruct<n>::type::getValue(*this); 
 	}
-	*/
-
+	template<std::size_t n>
+	decltype(GetForValueStruct<n>::type::getValue(std::declval<const JSONBranch&>())) getValue() const 
+	{
+		return GetForValueStruct<n>::type::getValue(*this); 
+	}
+/*
 	//test function	
 	template<std::size_t n>
 	void* getValue()
@@ -252,7 +261,7 @@ struct JSONBranch
 	}
 
 	constexpr static void* (JSONBranch::*(arr[JSONBranch::size]))(){&JSONBranch::getValue<0>};
-
+*/
 	//Get num of type with key=Find
 	template <std::size_t n, class Find, class... JSONelems>
 	struct Get;
@@ -320,7 +329,6 @@ using password = JSONArray<decltype("password"_GCT), double, 2>;
 int main()
 {
 	JSONBranch<decltype("root"_GCT), name, tree, password > a;	
-
-	volatile int f = 0;	
-	std::cout << ((a.*decltype(a)::arr[f])());
+	const decltype(a)& b = a;
+	std::cout << b.getValue<1>() << std::endl;
 }
