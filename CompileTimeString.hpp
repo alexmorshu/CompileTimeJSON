@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <cstddef>
 #include <array>
 #include <iostream>
@@ -311,6 +312,9 @@ struct JSONBranch
 };
 
 
+
+
+
 //GNU specific
 template<class T, T... chars>
 Str<T, chars...> operator""_GCT()
@@ -321,14 +325,14 @@ Str<T, chars...> operator""_GCT()
 
 
 
-using name = JSONArray<decltype("name"_GCT), double, 2>;
-using tree = JSONBranch<decltype("tree"_GCT), JSONLeaf<decltype("example1"_GCT), int>, JSONLeaf<decltype("example2"_GCT), int> >;
-using password = JSONArray<decltype("password"_GCT), double, 2>;
+using ID = JSONLeaf<decltype("ID"_GCT), std::uint64_t>;
+using user = JSONBranch<decltype("user"_GCT), JSONLeaf<decltype("name"_GCT), const char*>, JSONLeaf<decltype("password"_GCT), const char*>>;
+using root = JSONBranch<decltype("root"_GCT), ID, JSONArray<decltype("user"_GCT), user, 2>>;
 
 
 int main()
 {
-	JSONBranch<decltype("root"_GCT), name, tree, password > a;	
-	const decltype(a)& b = a;
-	std::cout << b.getValue<1>() << std::endl;
+	volatile int f = 1;
+	root a;
+	a.getValue<1>()[0].getValue<0>() = "Hello";
 }
