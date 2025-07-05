@@ -242,7 +242,7 @@ struct JSONBranch
 	
 
 
-
+/*
 	template<std::size_t n>
 	decltype(GetForValueStruct<n>::type::getValue(std::declval<JSONBranch&>())) getValue()
 	{
@@ -253,7 +253,8 @@ struct JSONBranch
 	{
 		return GetForValueStruct<n>::type::getValue(*this); 
 	}
-/*
+	*/
+
 	//test function	
 	template<std::size_t n>
 	void* getValue()
@@ -261,8 +262,26 @@ struct JSONBranch
 		return std::addressof(GetForValueStruct<n>::type::getValue(*this)); 
 	}
 
-	constexpr static void* (JSONBranch::*(arr[JSONBranch::size]))(){&JSONBranch::getValue<0>};
-*/
+	template<std::size_t n>
+	const void* getValue() const
+	{
+		return std::addressof(GetForValueStruct<n>::type::getValue(*this)); 
+	}
+
+
+
+	using MemberOfFunc = void* (JSONBranch::*([JSONBranch::size]))();
+	constexpr static MemberOfFunc arr{&JSONBranch::getValue<0>};
+
+	constexpr static void getArrayOfFunc(MemberOfFunc& a)
+	{
+		for(std::size_t i = 0; i < JSONBranch::size; i++)
+		{
+			a[i] = arr[i];
+		}
+	}
+
+
 	//Get num of type with key=Find
 	template <std::size_t n, class Find, class... JSONelems>
 	struct Get;
@@ -312,7 +331,9 @@ struct JSONBranch
 };
 
 
-
+//c++14 feature
+//template<class Key, class... JSONelem>
+//constexpr void* (JSONBranch<Key, JSONelem...>::*(JSONBranch<Key, JSONelem...>::arr[JSONBranch<Key, JSONelem...>::size]))(){};
 
 
 //GNU specific
@@ -334,5 +355,8 @@ int main()
 {
 	volatile int f = 1;
 	root a;
-	a.getValue<1>()[0].getValue<0>() = "Hello";
+	typename root::MemberOfFunc arr{};
+	root::getArrayOfFunc(arr);
+	std::cout << (a.*arr[0])();
+
 }
