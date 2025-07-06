@@ -72,6 +72,21 @@ struct Str
 };
 
 
+template<class T>
+struct Converter
+{
+	void ToString(std::string& str, const T& value)
+	{
+	}
+
+
+	void FromString(const char* c, std::size_t size , T& value)
+	{
+	}
+};
+
+
+
 template<class Key, class ValueType>
 struct JSONBaseElem
 {
@@ -100,6 +115,11 @@ template<class Key, class ValueType, std::size_t size>
 struct JSONArray: JSONBaseElem<Key, ValueType[size]>
 {
 
+};
+
+template<class BranchType, std::size_t size>
+struct JSONBranchArray: JSONArray<typename BranchType::StrKey, BranchType, size>
+{
 };
 
 //dynamic array
@@ -204,6 +224,10 @@ struct JSONBranch
 	{
 	};
 
+
+
+
+
 	template<std::size_t f>
 	struct ForValue<f>
 	{
@@ -242,7 +266,6 @@ struct JSONBranch
 	
 
 
-/*
 	template<std::size_t n>
 	decltype(GetForValueStruct<n>::type::getValue(std::declval<JSONBranch&>())) getValue()
 	{
@@ -253,25 +276,18 @@ struct JSONBranch
 	{
 		return GetForValueStruct<n>::type::getValue(*this); 
 	}
-	*/
-
-	//test function	
-	template<std::size_t n>
-	void* getValue()
-	{
-		return std::addressof(GetForValueStruct<n>::type::getValue(*this)); 
-	}
 
 	template<std::size_t n>
-	const void* getValue() const
+	void Write(const char* str, std::size_t size)
 	{
-		return std::addressof(GetForValueStruct<n>::type::getValue(*this)); 
+		using converter = Converter<decltype(this->getValue<n>())>; 
+		converter c;
+		c.FromString(str, size, this->getValue<n>());
 	}
 
 
-
-	using MemberOfFunc = void* (JSONBranch::*([JSONBranch::size]))();
-	constexpr static MemberOfFunc arr{&JSONBranch::getValue<0>};
+	using MemberOfFunc = void (JSONBranch::*([JSONBranch::size]))(const char*, std::size_t);
+	constexpr static MemberOfFunc arr{&JSONBranch::Write<0>};
 
 	constexpr static void getArrayOfFunc(MemberOfFunc& a)
 	{
@@ -348,15 +364,14 @@ Str<T, chars...> operator""_GCT()
 
 using ID = JSONLeaf<decltype("ID"_GCT), std::uint64_t>;
 using user = JSONBranch<decltype("user"_GCT), JSONLeaf<decltype("name"_GCT), const char*>, JSONLeaf<decltype("password"_GCT), const char*>>;
-using root = JSONBranch<decltype("root"_GCT), ID, JSONArray<decltype("user"_GCT), user, 2>>;
+using root = JSONBranch<decltype("root"_GCT), ID, JSONBranchArray<user, 2>>;
 
 
 int main()
 {
 	volatile int f = 1;
 	root a;
-	typename root::MemberOfFunc arr{};
-	root::getArrayOfFunc(arr);
-	std::cout << (a.*arr[0])();
 
+	a["user"_GCT][1]["name"_GCT] = "Hello";
+	std::cout << a["user"_GCT][1]["name"_GCT] << '\n';
 }
