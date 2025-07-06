@@ -85,6 +85,20 @@ struct Converter
 	}
 };
 
+template<>
+struct Converter<std::uint64_t>
+{
+	void ToString(std::string& str, const std::uint64_t& value)
+	{
+	}
+
+
+	void FromString(const char* c, std::size_t size , std::uint64_t& value)
+	{
+		int num = atoi(c);
+		value = static_cast<std::uint64_t>(num);
+	}
+};
 
 
 template<class Key, class ValueType>
@@ -165,9 +179,6 @@ struct JSONBranch
 	};
 
 	
-	
-
-	
 
 	//detail for GetSeq
 	template<std::size_t currentSize, std::size_t index, class JSONType>
@@ -225,9 +236,6 @@ struct JSONBranch
 	};
 
 
-
-
-
 	template<std::size_t f>
 	struct ForValue<f>
 	{
@@ -277,26 +285,47 @@ struct JSONBranch
 		return GetForValueStruct<n>::type::getValue(*this); 
 	}
 
+
+	//Write in arg using only string
 	template<std::size_t n>
 	void Write(const char* str, std::size_t size)
 	{
-		using converter = Converter<decltype(this->getValue<n>())>; 
+		using converter = Converter<typename std::decay<decltype(this->getValue<n>())>::type>; 
 		converter c;
 		c.FromString(str, size, this->getValue<n>());
 	}
 
-
 	using MemberOfFunc = void (JSONBranch::*([JSONBranch::size]))(const char*, std::size_t);
-	constexpr static MemberOfFunc arr{&JSONBranch::Write<0>};
+	struct Array
+	{
+		 static MemberOfFunc arr;
+	};
+
+	template<std::size_t i, std::size_t n>
+	struct Func
+	{
+		static const void get(MemberOfFunc& arr)
+		{
+			arr[i] = &JSONBranch::Write<i>;
+			Func<i+1, n>::get(arr);
+		}
+	};
+
+	template<std::size_t n>
+	struct Func<n, n>
+	{	
+		static const void get(MemberOfFunc&)
+		{
+			return;
+		}
+	};
+
 
 	constexpr static void getArrayOfFunc(MemberOfFunc& a)
 	{
-		for(std::size_t i = 0; i < JSONBranch::size; i++)
-		{
-			a[i] = arr[i];
-		}
-	}
-
+		Func<0,JSONBranch::size>::get(a);
+	};
+	
 
 	//Get num of type with key=Find
 	template <std::size_t n, class Find, class... JSONelems>
@@ -347,9 +376,6 @@ struct JSONBranch
 };
 
 
-//c++14 feature
-//template<class Key, class... JSONelem>
-//constexpr void* (JSONBranch<Key, JSONelem...>::*(JSONBranch<Key, JSONelem...>::arr[JSONBranch<Key, JSONelem...>::size]))(){};
 
 
 //GNU specific
@@ -364,7 +390,7 @@ Str<T, chars...> operator""_GCT()
 
 using ID = JSONLeaf<decltype("ID"_GCT), std::uint64_t>;
 using user = JSONBranch<decltype("user"_GCT), JSONLeaf<decltype("name"_GCT), const char*>, JSONLeaf<decltype("password"_GCT), const char*>>;
-using root = JSONBranch<decltype("root"_GCT), ID, JSONBranchArray<user, 2>>;
+using root = JSONBranch<decltype("root"_GCT), ID, user>;
 
 
 int main()
@@ -372,6 +398,8 @@ int main()
 	volatile int f = 1;
 	root a;
 
-	a["user"_GCT][1]["name"_GCT] = "Hello";
-	std::cout << a["user"_GCT][1]["name"_GCT] << '\n';
+	root::MemberOfFunc arr;
+	root::getArrayOfFunc(arr);
+	(a.*arr[0])("123", 4);
+	std::cout << a["ID"_GCT]<< '\n';
 }
