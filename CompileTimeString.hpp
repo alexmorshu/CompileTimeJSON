@@ -6,6 +6,7 @@
 #include <tuple>
 #include <vector>
 #include <algorithm>
+#include <unordered_map>
 
 
 //TODO: Add error support
@@ -101,17 +102,18 @@ struct Converter<std::uint64_t>
 };
 
 
+
 template<class Key, class ValueType>
 struct JSONBaseElem
 {
 	static const std::size_t size = 1;
 	using StrKey = Key;
 	ValueType value;
-	constexpr operator ValueType&()
+	constexpr operator ValueType&() noexcept
 	{
 		return value;
 	}
-	constexpr operator const ValueType&() const
+	constexpr operator const ValueType&() const noexcept
 	{
 		return value;
 	}
@@ -240,11 +242,11 @@ struct JSONBranch
 	struct ForValue<f>
 	{
 		using Ret = decltype(std::get<f>(std::declval<JSONBranch&>().values).value);	
-		static constexpr Ret& getValue(JSONBranch& b)
+		static constexpr Ret& getValue(JSONBranch& b) noexcept
 		{
 			return std::get<f>(b.values).value;
 		}
-		static constexpr const Ret& getValue(const JSONBranch& b)
+		static constexpr const Ret& getValue(const JSONBranch& b) noexcept
 		{
 			return std::get<f>(b.values).value;
 		}
@@ -255,11 +257,11 @@ struct JSONBranch
 		using nextBranch = typename std::remove_reference<decltype(std::get<f>(std::declval<JSONBranch>().values))>::type;
 		using Ret = decltype(nextBranch::template ForValue<s, indexes...>::getValue(std::get<f>(std::declval<JSONBranch&>().values)));	
 		using ConstRet = decltype(nextBranch::template ForValue<s, indexes...>::getValue(std::get<f>(std::declval<const JSONBranch&>().values)));	
-		static constexpr Ret getValue(JSONBranch& b)
+		static constexpr Ret getValue(JSONBranch& b) noexcept
 		{
 			return nextBranch::template ForValue<s, indexes...>::getValue(std::get<f>(b.values));
 		}
-		static constexpr ConstRet getValue(const JSONBranch& b)
+		static constexpr ConstRet getValue(const JSONBranch& b) noexcept
 		{
 			return nextBranch::template ForValue<s, indexes...>::getValue(std::get<f>(b.values));
 		}
@@ -275,12 +277,12 @@ struct JSONBranch
 
 
 	template<std::size_t n>
-	decltype(GetForValueStruct<n>::type::getValue(std::declval<JSONBranch&>())) getValue()
+	decltype(GetForValueStruct<n>::type::getValue(std::declval<JSONBranch&>())) getValue() noexcept
 	{
 		return GetForValueStruct<n>::type::getValue(*this); 
 	}
 	template<std::size_t n>
-	decltype(GetForValueStruct<n>::type::getValue(std::declval<const JSONBranch&>())) getValue() const 
+	decltype(GetForValueStruct<n>::type::getValue(std::declval<const JSONBranch&>())) getValue() const noexcept 
 	{
 		return GetForValueStruct<n>::type::getValue(*this); 
 	}
@@ -304,7 +306,7 @@ struct JSONBranch
 	template<std::size_t i, std::size_t n>
 	struct Func
 	{
-		static const void get(MemberOfFunc& arr)
+		static const void get(MemberOfFunc& arr) noexcept
 		{
 			arr[i] = &JSONBranch::Write<i>;
 			Func<i+1, n>::get(arr);
@@ -314,16 +316,16 @@ struct JSONBranch
 	template<std::size_t n>
 	struct Func<n, n>
 	{	
-		static const void get(MemberOfFunc&)
+		static const void get(MemberOfFunc&) noexcept
 		{
 			return;
 		}
 	};
 
 
-	constexpr static void getArrayOfFunc(MemberOfFunc& a)
+	constexpr static void getArrayOfFunc(MemberOfFunc& a) noexcept
 	{
-		Func<0,JSONBranch::size>::get(a);
+		Func<0, JSONBranch::size>::get(a);
 	};
 	
 
@@ -373,9 +375,90 @@ struct JSONBranch
 		constexpr std::size_t s = Get<0, T, JSONelem...>::i;
 		return static_cast<const typename ret<T>::type&>(std::get<s>(values));
 	}
+
+
 };
 
+class ContainerOrNumber
+{
+	union Node;
+	using ContainerType = std::unordered_map<std::string, ContainerOrNumber>;
+	union Node
+	{
+		std::size_t number;
+		alignas(ContainerType) char container[sizeof(ContainerType)];
+	};
+	enum class Tag
+	{
+		Number, Container
+	};
+public:
+	ContainerOrNumber(const std::size_t num) noexcept: typeOfValue_(Tag::Number)
+	{
+		value_.number = num;
+	}
+	ContainerOrNumber() noexcept(noexcept(ContainerType())): typeOfValue_(Tag::Container)
+	{
+		new(std::addressof(value_.container)) ContainerType();
+	}
 
+	~ContainerOrNumber()
+	{
+		if(isContainer())
+		{
+			unsafeCastToContainer().~ContainerType();
+		}
+	}
+	bool isContainer() noexcept
+	{
+		return Tag::Container == typeOfValue_;
+	}
+
+	ContainerType& unsafeCastToContainer() noexcept
+	{
+		return *static_cast<ContainerType*>(
+					static_cast<void*>(
+						std::addressof(value_.container)
+					)
+				);
+	}
+	const ContainerType& unsafeCastToContainer() const noexcept
+	{
+		return *static_cast<const ContainerType*>(
+					static_cast<const void*>(
+						std::addressof(value_.container)
+					)
+				);
+	}
+	std::size_t& unsafeCastToNumber() noexcept
+	{
+		return value_.number;
+	}
+
+	ContainerOrNumber& operator[](const std::string& key)
+	{
+		return unsafeCastToContainer()[key];
+	}	
+
+	const std::size_t& unsafeCastToNumber() const noexcept
+	{
+		return value_.number;
+	}
+
+	const ContainerOrNumber& operator[](const std::string& key) const 
+	{
+		decltype(auto) it = unsafeCastToContainer().find(key);
+		return it->second;
+	}	
+	void insert(const std::string& key, const ContainerOrNumber& value)
+	{
+		unsafeCastToContainer()[key] = value;
+	}	
+private:
+	Node value_;
+	Tag typeOfValue_;
+
+};
 
 
 //GNU specific
@@ -395,11 +478,18 @@ using root = JSONBranch<decltype("root"_GCT), ID, user>;
 
 int main()
 {
-	volatile int f = 1;
+	/*
+	volatile int f = 0;
 	root a;
 
 	root::MemberOfFunc arr;
 	root::getArrayOfFunc(arr);
-	(a.*arr[0])("123", 4);
-	std::cout << a["ID"_GCT]<< '\n';
+	(a.*arr[f])("123", 4);
+	*/
+	ContainerOrNumber a(50);
+	ContainerOrNumber b;
+	b.insert("hello",a);
+
+
+	std::cout << b["hello"].unsafeCastToNumber() << std::endl;
 }
