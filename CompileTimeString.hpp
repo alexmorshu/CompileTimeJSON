@@ -65,7 +65,7 @@ struct Str
 		return true;
 	}
 	
-	static constexpr void get(T* ptr) 
+	static void get(T* ptr) 
 	{
 		Write<T, chars...> g(ptr);	
 	}
@@ -99,6 +99,156 @@ struct Converter<std::uint64_t>
 		int num = atoi(c);
 		value = static_cast<std::uint64_t>(num);
 	}
+};
+
+
+class ContainerOrNumber
+{
+	union Node;
+	using ContainerType = std::unordered_map<std::string, ContainerOrNumber>;
+	union Node
+	{
+		std::size_t number;
+		alignas(ContainerType) char container[sizeof(ContainerType)];
+	};
+	enum class Tag
+	{
+		Number, Container
+	};
+public:
+	ContainerOrNumber(const std::size_t num) noexcept: typeOfValue_(Tag::Number)
+	{
+		value_.number = num;
+	}
+	ContainerOrNumber() noexcept(noexcept(ContainerType())): typeOfValue_(Tag::Container)
+	{
+		new(std::addressof(value_.container)) ContainerType();
+	}
+	ContainerOrNumber(const ContainerOrNumber& item): typeOfValue_(item.typeOfValue_)
+	{
+		CopyNode(item);
+	}
+
+	ContainerOrNumber(ContainerOrNumber&& item) noexcept: typeOfValue_(item.typeOfValue_)
+	{
+		MoveNode(std::move(item));
+	}
+
+	ContainerOrNumber& operator=(const ContainerOrNumber& item)
+	{
+		this->~ContainerOrNumber();
+		new(this) ContainerOrNumber(item);
+		return *this;
+	}
+	ContainerOrNumber& operator=(ContainerOrNumber&& item)
+	{
+		this->~ContainerOrNumber();
+		new(this) ContainerOrNumber(std::move(item));
+		return *this;
+	}
+
+	~ContainerOrNumber()
+	{
+		if(isContainer())
+		{
+			unsafeCastToContainer().~ContainerType();
+		}
+	}
+	bool isContainer() noexcept
+	{
+		return Tag::Container == typeOfValue_;
+	}
+
+	ContainerType& unsafeCastToContainer() noexcept
+	{
+		return *static_cast<ContainerType*>(
+					static_cast<void*>(
+						std::addressof(value_.container)
+					)
+				);
+	}
+	const ContainerType& unsafeCastToContainer() const noexcept
+	{
+		return *static_cast<const ContainerType*>(
+					static_cast<const void*>(
+						std::addressof(value_.container)
+					)
+				);
+	}
+	std::size_t& unsafeCastToNumber() noexcept
+	{
+		return value_.number;
+	}
+
+	ContainerOrNumber& operator[](const std::string& key)
+	{
+		return unsafeCastToContainer()[key];
+	}	
+
+	const std::size_t& unsafeCastToNumber() const noexcept
+	{
+		return value_.number;
+	}
+
+	const ContainerOrNumber& operator[](const std::string& key) const 
+	{
+		auto it = unsafeCastToContainer().find(key);
+		return it->second;
+	}	
+	void insert(const std::string& key, const ContainerOrNumber& value)
+	{
+		unsafeCastToContainer()[key] = value;
+	}
+private: 
+	void CopyNode(const ContainerOrNumber& node)
+	{
+		if(isContainer())
+		{
+			new(std::addressof(value_.container)) ContainerType(node.unsafeCastToContainer());
+		}
+		else
+		{
+			value_.number = node.value_.number; 
+		}
+	}
+	void MoveNode(ContainerOrNumber&& node) noexcept
+	{
+		if(isContainer())
+		{
+			new(std::addressof(value_.container)) ContainerType(std::move(node.unsafeCastToContainer()));
+		}
+		else
+		{
+			value_.number = node.value_.number; 
+		}
+	}
+private:
+	Node value_;
+	Tag typeOfValue_;
+
+};
+
+
+struct Stop
+{};
+
+template<std::size_t i, class... T>
+struct Iterator;
+
+template<std::size_t i,class f, class s, class... T>
+struct Iterator<i, f, s, T...>
+{
+	static const std::size_t index = i;
+	using value = f;
+	using next = Iterator<i+1,s, T...>;
+};
+
+template<std::size_t i, class f>
+struct Iterator<i,f>
+{
+	static const std::size_t index = i;
+	using value = f;
+	using next = Stop;
 };
 
 
@@ -148,7 +298,7 @@ template<class Key, class... JSONelem>
 struct JSONBranch
 {
 	using StrKey = Key;
-
+	using Iterator = Iterator<0,JSONelem...>;
 	std::tuple<JSONelem...> values;
 	
 
@@ -323,7 +473,7 @@ struct JSONBranch
 	};
 
 
-	constexpr static void getArrayOfFunc(MemberOfFunc& a) noexcept
+	static void getArrayOfFunc(MemberOfFunc& a) noexcept
 	{
 		Func<0, JSONBranch::size>::get(a);
 	};
@@ -366,99 +516,76 @@ struct JSONBranch
 	template<class T>
 	constexpr typename ret<T>::type& operator[](T str)
 	{
-		constexpr std::size_t s = Get<0, T, JSONelem...>::i;
-		return static_cast<typename ret<T>::type&>(std::get<s>(values));
+		return static_cast<typename ret<T>::type&>(std::get<Get<0, T, JSONelem...>::i>(values));
 	}
 	template<class T>
 	constexpr const typename ret<T>::type& operator[](T str) const
 	{
-		constexpr std::size_t s = Get<0, T, JSONelem...>::i;
-		return static_cast<const typename ret<T>::type&>(std::get<s>(values));
+		return static_cast<const typename ret<T>::type&>(std::get<Get<0, T, JSONelem...>::i>(values));
 	}
 
 
-};
 
-class ContainerOrNumber
-{
-	union Node;
-	using ContainerType = std::unordered_map<std::string, ContainerOrNumber>;
-	union Node
-	{
-		std::size_t number;
-		alignas(ContainerType) char container[sizeof(ContainerType)];
-	};
-	enum class Tag
-	{
-		Number, Container
-	};
-public:
-	ContainerOrNumber(const std::size_t num) noexcept: typeOfValue_(Tag::Number)
-	{
-		value_.number = num;
-	}
-	ContainerOrNumber() noexcept(noexcept(ContainerType())): typeOfValue_(Tag::Container)
-	{
-		new(std::addressof(value_.container)) ContainerType();
-	}
+	template<class Iterator, typename = void>
+	struct GetContainer;
 
-	~ContainerOrNumber()
+
+
+	template<class Iterator>
+	struct GetContainer<Iterator, typename std::enable_if< !(ValueExists< typename Iterator::value>::type::value) >::type>
 	{
-		if(isContainer())
+
+		static void get(ContainerOrNumber& container, std::size_t& index)
 		{
-			unsafeCastToContainer().~ContainerType();
+			using Branch = typename Iterator::value;
+			char name [Branch::StrKey::size];
+			Branch::StrKey::get(name);
+			const std::string key(name, sizeof(name));
+			ContainerOrNumber cont; 
+			Branch::template GetContainer<typename Branch::Iterator>::get(cont, index);
+			container.insert(key, cont);
+			JSONBranch::template GetContainer<typename Iterator::next>::get(container, index);
 		}
-	}
-	bool isContainer() noexcept
+	};
+
+	template<class Iterator>
+	struct GetContainer<Iterator, typename std::enable_if<
+		(ValueExists<typename Iterator::value>::type::value)>::type>
 	{
-		return Tag::Container == typeOfValue_;
+		static void get(ContainerOrNumber& container, std::size_t& index)
+		{
+			using Element = typename Iterator::value;
+			char name [Element::StrKey::size];
+			Element::StrKey::get(name);
+			const std::string key(name, sizeof(name));
+			ContainerOrNumber cont(index);
+			index+=1;
+			container.insert(key, cont);
+			JSONBranch::template GetContainer<typename Iterator::next>::get(container, index);
+		}
+	};
+
+	template<>	
+	struct GetContainer<Stop>
+	{
+		static void get(ContainerOrNumber& container, std::size_t& index)
+		{
+			return;
+		}
+	};
+
+	
+	static ContainerOrNumber getContainer() 
+	{
+		std::size_t index = 0;
+		ContainerOrNumber result;
+		GetContainer<Iterator>::get(result, index);
+		return result;
 	}
 
-	ContainerType& unsafeCastToContainer() noexcept
-	{
-		return *static_cast<ContainerType*>(
-					static_cast<void*>(
-						std::addressof(value_.container)
-					)
-				);
-	}
-	const ContainerType& unsafeCastToContainer() const noexcept
-	{
-		return *static_cast<const ContainerType*>(
-					static_cast<const void*>(
-						std::addressof(value_.container)
-					)
-				);
-	}
-	std::size_t& unsafeCastToNumber() noexcept
-	{
-		return value_.number;
-	}
-
-	ContainerOrNumber& operator[](const std::string& key)
-	{
-		return unsafeCastToContainer()[key];
-	}	
-
-	const std::size_t& unsafeCastToNumber() const noexcept
-	{
-		return value_.number;
-	}
-
-	const ContainerOrNumber& operator[](const std::string& key) const 
-	{
-		decltype(auto) it = unsafeCastToContainer().find(key);
-		return it->second;
-	}	
-	void insert(const std::string& key, const ContainerOrNumber& value)
-	{
-		unsafeCastToContainer()[key] = value;
-	}	
-private:
-	Node value_;
-	Tag typeOfValue_;
 
 };
+
 
 
 //GNU specific
@@ -478,18 +605,10 @@ using root = JSONBranch<decltype("root"_GCT), ID, user>;
 
 int main()
 {
-	/*
-	volatile int f = 0;
-	root a;
-
+	root j;
+	ContainerOrNumber container = j.getContainer();
 	root::MemberOfFunc arr;
 	root::getArrayOfFunc(arr);
-	(a.*arr[f])("123", 4);
-	*/
-	ContainerOrNumber a(50);
-	ContainerOrNumber b;
-	b.insert("hello",a);
-
-
-	std::cout << b["hello"].unsafeCastToNumber() << std::endl;
+	(j.*(arr[container["ID"].unsafeCastToNumber()]))("124", 4);
+	std::cout << j["ID"_GCT] << std::endl;
 }
