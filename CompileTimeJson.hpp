@@ -13,6 +13,7 @@ struct JSONBaseElem
 {
     static const std::size_t size = 1;
     using StrKey = Key;
+    using type = ValueType;
     ValueType value;
     constexpr operator ValueType&() noexcept
     {
@@ -32,45 +33,53 @@ struct JSONLeaf: JSONBaseElem<Key, ValueType>
 };
 
 //fix array
-template<class Key, class ValueType, std::size_t size>
-struct JSONArray: JSONBaseElem<Key, ValueType[size]>
+template<class Key, class ValueType, std::size_t fixsize>
+struct JSONArray: JSONBaseElem<Key, ValueType[fixsize]>
 {
-
+	 constexpr std::size_t sizeArray() const noexcept
+	 {
+		 return fixsize;
+	 }
 };
 
-template<class BranchType, std::size_t size>
+/*template<class BranchType, std::size_t size>
 struct JSONBranchArray: JSONArray<typename BranchType::StrKey, BranchType, size>
 {
-};
+};*/
 
 //dynamic array
 template<class Key, class ValueType>
 struct JSONArray<Key, ValueType, static_cast<std::size_t>(-1)> : JSONBaseElem<Key, std::vector<ValueType>>
 {
+	std::size_t sizeArray() const noexcept
+	{
+		return this->value.size();
+	}
+};
+
+//get count of elem
+template<class... T>
+struct SumSize
+{
+	static const std::size_t value = 0;
+};
+
+template<class F, class... T>
+struct SumSize<F, T...>
+{
+	static const std::size_t value = F::size + SumSize<T...>::value;
 };
 
 template<class Key, class... JSONelem>
 struct JSONBranch
 {
     using StrKey = Key;
-    using Iterator = Iterator<0,JSONelem...>;
+    using Iterator = ::Iterator<0,JSONelem...>;
     std::tuple<JSONelem...> values;
 
 
-    //get count of elem
-    template<class... T>
-    struct SumSize
-    {
-        static const std::size_t value = 0;
-    };
-
-    template<class F, class... T>
-    struct SumSize<F, T...>
-    {
-        static const std::size_t value = F::size + SumSize<T...>::value;
-    };
     //count of elems
-    static const std::size_t size = SumSize<JSONelem...>::value;
+    static const std::size_t size = ::SumSize<JSONelem...>::value;
 
 
 
@@ -264,7 +273,7 @@ struct JSONBranch
     template<class Find>
     struct ret<Find, typename ValueExists< typename typeJson<Find>::type >::type >
     {
-        using type = typename typeJson<Find>::type;
+        using type = typename std::remove_reference<typename typeJson<Find>::type>::type;
     };
 
     //get ref of value if it`s a elem with key str, or ref to branch
@@ -280,6 +289,16 @@ struct JSONBranch
     }
 
 
+    template<class T>
+    constexpr decltype(std::get<Get<0, T, JSONelem...>::i>(std::declval<const decltype(values)>()))& getRaw(T str)
+    {
+        return std::get<Get<0, T, JSONelem...>::i>(this->values);
+    }
+    template<class T>
+    constexpr decltype(std::get<Get<0, T, JSONelem...>::i>(std::declval<const decltype(values)>()))& getRaw(T str) const
+    {
+        return std::get<Get<0, T, JSONelem...>::i>(this->values);
+    }
 
     template<class Iterator, typename = void>
     struct GetContainer;
@@ -321,7 +340,7 @@ struct JSONBranch
     };
 
     template<>
-    struct GetContainer<Stop>
+    struct GetContainer<::Stop>
     {
         static void get(ContainerOrNumber& container, std::size_t& index)
         {
@@ -337,9 +356,55 @@ struct JSONBranch
         GetContainer<Iterator>::get(result, index);
         return result;
     }
-
-
 };
 
 
+
+template<class Str, class Type>
+struct Converter<JSONLeaf<Str, Type>>
+{
+	void ToString(std::string& str, const JSONLeaf<Str, Type>& v)
+	{
+		Converter<Type> a;
+		a.ToString(str, v.value);
+	}
+	void FromString(const char* p, std::size_t i, JSONLeaf<Str, Type>& v)
+	{
+		Converter<Type> a;
+		a.FromString(p, i, v.value);
+	}
+};
+template<class Str, class Type, std::size_t fixSize>
+struct Converter<JSONArray<Str, Type, fixSize>>
+{
+	void ToString(std::string& str, const JSONArray<Str, Type, fixSize>& v)
+	{
+		str.push_back('[');
+		std::string ctx;
+		for(std::size_t i = 0; i < v.sizeArray(); i++)
+		{
+			if(i != 0)
+				str.push_back(',');
+			Converter<Type> a;
+			a.ToString(ctx, v[i]);
+			str.append(ctx);
+		}
+		str.push_back(']');
+	}
+	void FromString(const char* p, std::size_t i, JSONArray<Str, Type, fixSize>& v)
+	{
+	}
+};
+
+template<class Str, class... Type>
+struct Converter<JSONBranch<Str, Type...>>
+{
+	void ToString(std::string& str, const JSONBranch<Str, Type...>& v)
+	{
+		str = serialize(v);
+	}
+	void FromString(const char* p, std::size_t i, JSONBranch<Str, Type...>& v)
+	{
+	}
+};
 
