@@ -38,7 +38,7 @@ ContainerOrNumber::~ContainerOrNumber()
         unsafeCastToContainer().~ContainerType();
     }
 }
-bool ContainerOrNumber::isContainer() noexcept
+bool ContainerOrNumber::isContainer() const noexcept
 {
     return Tag::Container == typeOfValue_;
 }

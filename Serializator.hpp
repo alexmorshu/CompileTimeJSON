@@ -1,5 +1,10 @@
 #pragma once
 #include "CompileTimeJson.hpp"
+#include <iostream>
+#include <cctype>
+#include <stack>
+#include <functional>
+
 template<class Iterator, class JsonType,  typename = void>
 struct GetJSON;
 
@@ -75,3 +80,82 @@ std::string serialize(const T& v)
 	GetJSON<typename T::Iterator, T>::get(result, 0, ctx, v);
 	return result;
 }
+
+
+
+
+
+template<class JSONRoot>
+void deserialize(const std::string& json, JSONRoot& container)
+{
+	static typename JSONRoot::MemberOfFunc members;
+	static const ContainerOrNumber root = JSONRoot::getContainer();
+	static bool isInit = false;
+	if(!isInit)
+	{
+		JSONRoot::getArrayOfFunc(members);
+		isInit = true;
+	}
+
+	std::size_t currentPosition = 0;
+	std::string key;
+
+	std::function<void(const ContainerOrNumber&)> reg = [&] (const ContainerOrNumber& cont)
+	{
+		if(cont.isContainer())
+		{
+			while(true)
+			{
+				currentPosition = json.find('"', currentPosition) + 1;
+				const std::size_t last = json.find('"', currentPosition);
+				key.assign(json.begin() + currentPosition, json.begin() + last);	
+				currentPosition = json.find(':', last+1);
+				do
+					currentPosition+=1;
+				while(std::isspace(json[currentPosition]));
+
+				reg(cont[key]);				
+				while(std::isspace(json[currentPosition]))
+					currentPosition+=1;
+				if(json[currentPosition] == '}')
+					break;
+				currentPosition+=1;
+				
+			}
+		}
+		else
+		{	
+			const std::size_t num = cont.unsafeCastToNumber();
+			auto member = members[num];
+			while(std::isspace(json[currentPosition]))
+				currentPosition+=1;
+			if(json[currentPosition] == '"')
+			{	
+				currentPosition += 1;
+				const std::size_t last = json.find('"', currentPosition);
+				key.assign(json.begin() + currentPosition, json.begin() + last);	
+				(container.*member)(key.data(), key.size());
+			}
+			else if(json[currentPosition] == '[')
+			{
+				(container.*member)(json.c_str()+currentPosition, 0);
+			}
+			else
+			{	
+				const std::size_t old = currentPosition;
+				while(!std::isspace(json[currentPosition]) && json[currentPosition] != ',' && json[currentPosition] != '}')
+					currentPosition+=1;
+	
+				(container.*member)(json.c_str() + old, currentPosition-old);
+			}
+
+		}
+	};
+	reg(root);
+}
+
+
+
+
+
+

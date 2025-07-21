@@ -30,7 +30,7 @@ public:
 
     ~ContainerOrNumber();
 
-    bool isContainer() noexcept;
+    bool isContainer() const noexcept;
 
     ContainerType& unsafeCastToContainer() noexcept;
 

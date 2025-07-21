@@ -43,14 +43,14 @@ struct ValueExists<T, void_t<decltype(std::declval<T>().value)>>
 template<class T>
 struct Converter
 {
-    //void ToString(std::string& str, const T& value)
-    //{
-    //}
+    void ToString(std::string& str, const T& value) const noexcept
+    {
+    }
 
 
-    //void FromString(const char* c, std::size_t size , T& value)
-    //{
-    //}
+    void FromString(const char* c, std::size_t size , T& value) const noexcept
+    {
+    }
 };
 
 template<>
@@ -58,6 +58,7 @@ struct Converter<std::uint64_t>
 {
     void ToString(std::string& str, const std::uint64_t& value)
     {
+	    std::cout << value;
 	    str = std::to_string(value);
     }
 

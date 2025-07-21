@@ -206,7 +206,7 @@ struct JSONBranch
     template<std::size_t n>
     void Write(const char* str, std::size_t size)
     {
-        using converter = Converter<typename std::decay<decltype(this->getValue<n>())>::type>;
+        using converter = Converter<typename std::remove_cv<typename std::remove_reference<decltype(this->getValue<n>())>::type>::type>;
         converter c;
         c.FromString(str, size, this->getValue<n>());
     }
